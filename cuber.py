@@ -18,6 +18,12 @@ class Side(object):
     L = 3
     U = 4
     D = 5
+    S = 6
+    M = 7
+    E = 8
+    X = 9
+    Y = 10
+    Z = 11
 
 class Face(object):
     def __init__(self, side, color, *attached):
@@ -78,6 +84,27 @@ class Cube(object):
                         self.bottom_line(Side.R),
                         self.bottom_line(Side.B),
                         self.bottom_line(Side.L)
+                    ),
+                Side.S: Face(
+                        Side.M, Color.WHITE,
+                        self.middle_line(Side.U),
+                        self.middle_line(Side.R, True),
+                        self.middle_line(Side.D),
+                        self.middle_line(Side.L, True)
+                    ),
+                Side.M: Face(
+                        Side.M, Color.WHITE,
+                        self.middle_line(Side.F, True),
+                        self.middle_line(Side.U, True),
+                        self.middle_line(Side.B, True),
+                        self.middle_line(Side.D, True)
+                    ),
+                Side.E: Face(
+                        Side.M, Color.WHITE,
+                        self.middle_line(Side.F),
+                        self.middle_line(Side.R),
+                        self.middle_line(Side.B),
+                        self.middle_line(Side.L)
                     )
                 }
 
@@ -90,8 +117,11 @@ class Cube(object):
         else:
             return (self.coord(side, 0, 0), self.coord(side, 0, 1), self.coord(side, 0, 2))
 
-    def middle_line(self, side):
-        return (self.coord(side, 1, 0), self.coord(side, 1, 1), self.coord(side, 1, 2))
+    def middle_line(self, side, invert=False):
+        if invert:
+            return (self.coord(side, 0, 1), self.coord(side, 1, 1), self.coord(side, 2, 1))
+        else:
+            return (self.coord(side, 1, 0), self.coord(side, 1, 1), self.coord(side, 1, 2))
 
     def bottom_line(self, side, invert=False):
         if invert:
@@ -112,15 +142,28 @@ class Cube(object):
             return (self.coord(side, 0, 0), self.coord(side, 1, 0), self.coord(side, 2, 0))
 
     def assign_line(self, src, target, invert=False):
+#        print(src, target)
         for i in xrange(len(src)):
             if invert:
+#                print('ia',i,self.colors[target[i]])
                 self.colors[target[i]] = self.colors[src[::-1][i]]
+#                print('ib',i,self.colors[target[i]])
             else:
+#                print('ra',i,self.colors[target[i]])
                 self.colors[target[i]] = self.colors[src[i]]
+#                print('rb',i,self.colors[target[i]])
 
-    def assign_line_values(self, values, target_coords):
+    def assign_line_values(self, values, target_coords, invert=False):
         for i in xrange(len(values)):
-            self.colors[target_coords[i]] = values[i]
+            if invert:
+#                print('iac',i,self.colors[target_coords[i]])
+#                self.colors[target_coords[i]] = values[::-1][i]
+                self.colors[target_coords[i]] = values[i]
+#                print('ibc',i,self.colors[target_coords[i]])
+            else:
+#                print('rac',i,self.colors[target_coords[i]])
+                self.colors[target_coords[i]] = values[i]
+#                print('rbc',i,self.colors[target_coords[i]])
 
     def get_line(self, line):
         return [self.colors[i] for i in line]
@@ -133,20 +176,48 @@ class Cube(object):
                 result[i].append(self.colors[self.coord(side, i, j)])
         return result
 
-    def turn(self, side):
+    def face_rotation(self, side, invert=False):
         f = self.faces[side]
-        face_array = self.make_2d(side)
+        if side < 6:
+            face_array = self.make_2d(side)
 
-        rotated = zip(*face_array[::-1])
-        for i in xrange(self.size):
-            for j in xrange(self.size):
-                self.colors[self.coord(side, i, j)] = rotated[i][j]
+            if invert:
+                rotated = zip(*face_array)[::-1]
+            else:
+                rotated = zip(*face_array[::-1])
+            for i in xrange(self.size):
+                for j in xrange(self.size):
+                    self.colors[self.coord(side, i, j)] = rotated[i][j]
+        return f
 
+    def line_rotation(self, f, invert=False, special_side=False):
+#        print('invert',invert)
         tmp = self.get_line(f.attached[0])
-        self.assign_line(f.attached[3], f.attached[0])
-        self.assign_line(f.attached[2], f.attached[3])
-        self.assign_line(f.attached[1], f.attached[2])
-        self.assign_line_values(tmp, f.attached[1])
+        if invert:
+            i = j = 0
+            end = self.size
+            increment = 1
+        else:
+            self.assign_line(f.attached[self.size], f.attached[0], special_side)
+            i = j = self.size
+            end = 1
+            increment = -1
+        while i != end:
+            i += increment
+            if i == 1 and special_side is True: # ok for M' M' and S S
+#            if i == 3 and special_side is True: # M M only blue turn on F; S' S' only white turn on D
+                self.assign_line(f.attached[i], f.attached[j])
+            else:
+                self.assign_line(f.attached[i], f.attached[j], special_side)
+            j += increment
+        self.assign_line_values(tmp, f.attached[j], special_side)
+
+    def turn(self, side):
+        f = self.face_rotation(side)
+        if side in [6, 7, 8, 9, 10, 11]:
+            self.line_rotation(f, False, True)
+        else:
+            self.line_rotation(f)
 
     def is_bad_edge(self, side, line, sticker):
         if side == Side.U or side == Side.D:
@@ -226,19 +297,11 @@ class Cube(object):
         return result
 
     def turn_back(self, side):
-        f = self.faces[side]
-        face_array = self.make_2d(side)
-
-        rotated = zip(*face_array)[::-1]
-        for i in xrange(self.size):
-            for j in xrange(self.size):
-                self.colors[self.coord(side, i, j)] = rotated[i][j]
-
-        tmp = self.get_line(f.attached[0])
-        self.assign_line(f.attached[1], f.attached[0])
-        self.assign_line(f.attached[2], f.attached[1])
-        self.assign_line(f.attached[3], f.attached[2])
-        self.assign_line_values(tmp, f.attached[3])
+        f = self.face_rotation(side, True)
+        if side in [6, 7, 8, 9, 10, 11]:
+            self.line_rotation(f, True, True)
+        else:
+            self.line_rotation(f, True)
 
     def turn_double(self, side):
         #TODO: non-lazy (and more optimal) implementation
